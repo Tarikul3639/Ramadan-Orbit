@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useUserLocation } from "@/hooks/useUserLocation";
+
+const DISTRICT_CACHE_KEY = "user_location_district";
+const DISTRICT_CACHE_TIME_KEY = "user_location_district_time";
+const SIX_HOURS = 1000 * 60 * 60 * 6;
 
 interface LocationInfo {
   state_district: string | null;
@@ -10,84 +14,104 @@ interface LocationInfo {
   country_code: string | null;
 }
 
-const CACHE_KEY = "user_location_district";
-const CACHE_TIME_KEY = "user_location_district_time";
-const SIX_HOURS = 1000 * 60 * 60 * 6;
+const getCachedDistrict = () => {
+  try {
+    const data = localStorage.getItem(DISTRICT_CACHE_KEY);
+    const time = localStorage.getItem(DISTRICT_CACHE_TIME_KEY);
+    if (data && time) {
+      return {
+        info: JSON.parse(data) as LocationInfo,
+        time: Number(time),
+      };
+    }
+  } catch {}
+  return null;
+};
+
+const setDistrictCache = (info: LocationInfo) => {
+  try {
+    localStorage.setItem(DISTRICT_CACHE_KEY, JSON.stringify(info));
+    localStorage.setItem(DISTRICT_CACHE_TIME_KEY, Date.now().toString());
+  } catch {}
+};
 
 export function useDistrictFromLocation() {
-  const { latitude, longitude, loading: mapLoading } = useUserLocation();
-
-  const [locationInfo, setLocationInfo] = useState<LocationInfo>({
+  const { latitude, longitude, loading: locationLoading } = useUserLocation();
+  const [district, setDistrict] = useState<LocationInfo>({
     state_district: null,
     county: null,
     state: null,
     country_code: null,
   });
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const [loading, setLoading] = useState(true); // Start with true
+  const intervalRef = useRef<NodeJS.Timeout|null>(null);
 
-  useEffect(() => {
-    // Waiting for map hook
-    if (mapLoading || latitude == null || longitude == null) {
+  const fetchDistrict = async (force = false) => {
+    // If user location is unknown, don't proceed
+    if (locationLoading || latitude == null || longitude == null) {
       setLoading(true);
       return;
     }
 
-    const fetchDistrict = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`,
-        );
-        const data = await res.json();
-
-        const newLocation = {
-          state_district: data?.address?.state_district
-            ? data.address.state_district.split(" ").slice(0, -1).join(" ")
-            : "dhaka",
-          county: data?.address?.county ?? null,
-          state: data?.address?.state ?? null,
-          country_code: data?.address?.country_code ?? "bd",
-        };
-
-        setLocationInfo(newLocation);
-
-        // Save in localStorage
-        localStorage.setItem(CACHE_KEY, JSON.stringify(newLocation));
-        localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
-      } catch (err) {
-        console.error("District fetch error:", err);
-
-        const fallback = {
-          state_district: "dhaka",
-          county: null,
-          state: null,
-          country_code: "bd",
-        };
-
-        setLocationInfo(fallback);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const cachedData = localStorage.getItem(CACHE_KEY);
-    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
-
-    if (cachedData && cachedTime) {
-      const now = Date.now();
-      const diff = now - Number(cachedTime);
-
-      // If cache is valid (within 6 hours)
-      if (diff < SIX_HOURS) {
-        setLocationInfo(JSON.parse(cachedData));
-        setLoading(false);
-        return;
-      }
+    // 1. Use cache if fresh enough and not forced
+    const cached = getCachedDistrict();
+    const fresh = cached && Date.now() - cached.time < SIX_HOURS;
+    if (!force && fresh) {
+      setDistrict(cached.info);
+      setLoading(false);
+      return;
     }
-    
-    fetchDistrict();
-  }, [latitude, longitude, mapLoading]);
 
-  return { ...locationInfo, loading };
+    try {
+      setLoading(true);
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
+      );
+      const data = await res.json();
+      const address = data?.address || {};
+
+      let stateDistrict: string | null = address.state_district ?? null;
+      if (stateDistrict && stateDistrict.split(" ").length > 1) {
+        stateDistrict = stateDistrict.split(" ").slice(0, -1).join(" ");
+      }
+
+      const info: LocationInfo = {
+        state_district: stateDistrict || "dhaka",
+        county: address.county ?? null,
+        state: address.state ?? null,
+        country_code: address.country_code ?? "bd",
+      };
+
+      setDistrict(info);
+      setDistrictCache(info);
+    } catch (e) {
+      const fallback: LocationInfo = {
+        state_district: "dhaka",
+        county: null,
+        state: null,
+        country_code: "bd",
+      };
+      setDistrict(fallback);
+      setDistrictCache(fallback);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial fetch or cache load
+  useEffect(() => {
+    fetchDistrict(false);
+
+    // Set up periodic refresh every 6 hours (so the district stays synced with coordinates)
+    intervalRef.current = setInterval(() => fetchDistrict(true), SIX_HOURS);
+
+    // Clean up interval on unmount
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+    // eslint-disable-next-line
+  }, [latitude, longitude, locationLoading]);
+
+  return { ...district, loading };
 }

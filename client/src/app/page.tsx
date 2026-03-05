@@ -12,6 +12,7 @@ import { useDistrictFromLocation } from "@/hooks/useDistrictFromLocation";
 import LocationLoader from "@/components/ui/LocationLoader";
 import animationData from "@/Public/animations/Ramadan-Top.json";
 import Dialog from "@/components/ui/Dialog";
+import ResetLocation from "@/components/ui/ResetLocationButton";
 
 export default function Home() {
   const {
@@ -36,6 +37,7 @@ export default function Home() {
       {/* Background */}
       <div className="fixed inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2280%22%20height%3D%2280%22%20viewBox%3D%220%200%2080%2080%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cpath%20d%3D%27M40%200l20%2020-20%2020-20-20L40%200zm0%2080l20-20-20-20-20%2020%2020%2080zM0%2040l20-20%2020%2020-20%2020L0%2040zm80%2040l-20-15-20%2015%2020%2015%2020-15z%27%20fill%3D%27%23D4AF37%27%20fill-opacity%3D%270.02%27%20fill-rule%3D%27evenodd%27/%3E%3C/svg%3E')] bg-no-repeat bg-center bg-cover pointer-events-none" />
 
+      {/* Animation */}
       <div className="absolute top-20 opacity-100 pointer-events-none">
         <Lottie
           loop={false}
@@ -61,7 +63,9 @@ export default function Home() {
           country_code={country_code}
         />
 
-        <div className="mt-4 sm:mt-8 md:mt-10 lg:mt-16 text-center space-y-2 sm:space-y-4">
+        <div className="flex flex-col items-center mt-4 sm:mt-8 md:mt-10 lg:mt-16 text-center space-y-2 sm:space-y-4">
+          {/* Reset Location Button */}
+          <ResetLocation />
           <h2 className="font-serif text-base sm:text-lg md:text-xl font-light tracking-[0.2em] text-white">
             {today?.day} RAMADAN 1447
           </h2>
