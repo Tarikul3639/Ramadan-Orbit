@@ -10,6 +10,10 @@ interface LocationInfo {
   country_code: string | null;
 }
 
+const CACHE_KEY = "user_location_district";
+const CACHE_TIME_KEY = "user_location_district_time";
+const SIX_HOURS = 1000 * 60 * 60 * 6;
+
 export function useDistrictFromLocation() {
   const { latitude, longitude, loading: mapLoading } = useUserLocation();
 
@@ -37,27 +41,51 @@ export function useDistrictFromLocation() {
         );
         const data = await res.json();
 
-        setLocationInfo({
+        const newLocation = {
           state_district: data?.address?.state_district
             ? data.address.state_district.split(" ").slice(0, -1).join(" ")
-            : "dhaka", // fallback
+            : "dhaka",
           county: data?.address?.county ?? null,
           state: data?.address?.state ?? null,
-          country_code: data?.address?.country_code ?? "bd", // fallback
-        });
+          country_code: data?.address?.country_code ?? "bd",
+        };
+
+        setLocationInfo(newLocation);
+
+        // Save in localStorage
+        localStorage.setItem(CACHE_KEY, JSON.stringify(newLocation));
+        localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
       } catch (err) {
         console.error("District fetch error:", err);
-        setLocationInfo({
+
+        const fallback = {
           state_district: "dhaka",
           county: null,
           state: null,
           country_code: "bd",
-        });
+        };
+
+        setLocationInfo(fallback);
       } finally {
         setLoading(false);
       }
     };
 
+    const cachedData = localStorage.getItem(CACHE_KEY);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
+
+    if (cachedData && cachedTime) {
+      const now = Date.now();
+      const diff = now - Number(cachedTime);
+
+      // If cache is valid (within 6 hours)
+      if (diff < SIX_HOURS) {
+        setLocationInfo(JSON.parse(cachedData));
+        setLoading(false);
+        return;
+      }
+    }
+    
     fetchDistrict();
   }, [latitude, longitude, mapLoading]);
 
